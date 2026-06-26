@@ -12,8 +12,11 @@ local M = {}
 local function open_file(file_path)
   local viewer = config.get().pdf_viewer
   if viewer then
+    -- Split viewer into a table to avoid passing arguments as part of pdf viewer's name
+    local viewer_table = vim.split(viewer, ' ')
+    table.insert(viewer_table, file_path)
     -- User-configured viewer: run as background job to avoid disrupting cursor/window layout
-    vim.fn.jobstart({ viewer, file_path }, { detach = true })
+    M._state.pdf_job_id = vim.fn.jobstart(viewer_table, { detach = true })
   else
     -- Auto-detect platform launcher (runs in background)
     local cmd
@@ -35,6 +38,7 @@ M._state = {
   project_data = nil,
   csrf_token = nil,
   documents = {}, -- doc_id -> Document
+  pdf_job_id = nil, -- Job ID of the PDF process. Used to kill process when closing NeoVim
 }
 
 function M.setup(opts)
@@ -54,6 +58,17 @@ function M.setup(opts)
     map('n', '<leader>oR', function() M.reply_comment() end, { desc = 'Overleaf: Reply to comment' })
     map('n', '<leader>ox', function() M.resolve_comment() end, { desc = 'Overleaf: Resolve/reopen comment' })
     map('n', '<leader>of', function() M.search() end, { desc = 'Overleaf: Find in project' })
+  end
+
+  -- Register PDF closure on exiting of program
+  if config.get().close_pdf_on_exit then
+    vim.api.nvim_create_autocmd('VimLeavePre', {
+      callback = function()
+        if M._state.pdf_job_id then
+          vim.fn.jobstop(M._state.pdf_job_id)
+        end
+      end
+    })
   end
 end
 
@@ -585,6 +600,11 @@ function M.select_document()
   end
 
   project.select_document(function(doc_id, doc_path) M.open_document(doc_id, doc_path) end)
+
+  -- Auto-compile the file upon opening
+  if config.get().startup_compile then
+    vim.schedule(function() M.compile() end)
+  end
 end
 
 function M.toggle_tree()
@@ -1006,7 +1026,10 @@ function M.compile()
     if result.status == 'success' then
       config.log('info', 'Compile succeeded')
       -- Auto-download and open PDF
-      M._open_pdf(result.outputFiles or {})
+      M._open_pdf(result.outputFiles or {}, {
+        serverId = result.clsiServerId,
+        downloadDomain = result.pdfDownloadDomain
+      })
     else
       config.log('warn', 'Compile status: %s', result.status)
     end
@@ -1015,7 +1038,7 @@ function M.compile()
   end)
 end
 
-function M._open_pdf(output_files)
+function M._open_pdf(output_files, compile_info)
   local pdf_file = nil
   for _, f in ipairs(output_files) do
     if f.path == 'output.pdf' then
@@ -1027,9 +1050,11 @@ function M._open_pdf(output_files)
 
   bridge.request('downloadUrl', {
     cookie = config.get().cookie,
-    url = config.get().base_url .. pdf_file.url,
+    url = pdf_file.url,
     fileName = (M._state.project_name or 'output') .. '.pdf',
     outputDir = config.get().pdf_dir,
+    serverId = compile_info and compile_info.serverId,
+    downloadDomain = compile_info and compile_info.downloadDomain,
   }, function(err, result)
     if err then
       config.log('debug', 'PDF download failed: %s', err.message)

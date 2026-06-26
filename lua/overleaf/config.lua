@@ -9,6 +9,7 @@ M._config = {
   pdf_dir = nil, -- PDF output directory (nil = system temp dir)
   sync_dir = nil, -- Local file sync directory (nil = disabled; enables external tool integration)
   log_level = 'info', -- 'debug', 'info', 'warn', 'error'
+  startup_compile = false, -- Compiles file automatically when opening
 }
 
 function M.setup(opts)

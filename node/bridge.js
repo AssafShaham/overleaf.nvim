@@ -124,13 +124,19 @@ const handlers = {
       log = logRes.body;
     }
 
-    return { status: parsed.status, outputFiles: parsed.outputFiles || [], log };
+    return { status: parsed.status, outputFiles: parsed.outputFiles || [], clsiServerId: parsed.clsiServerId, pdfDownloadDomain: parsed.pdfDownloadDomain, log };
   },
 
   async downloadUrl(params) {
-    const { cookie, url, fileName, outputDir } = params;
+    const { cookie, url, fileName, outputDir, serverId, downloadDomain } = params;
     if (!cookie || !url) {
       throw { code: 'MISSING_PARAM', message: 'cookie and url are required' };
+    }
+
+    // If downloadDomain is provided, modify the url accordingly; otherwise, leave it as is
+    let finalUrl = url;
+    if (downloadDomain) {
+        finalUrl = downloadDomain + url + "?compileGroup=priority&clsiserverid=" + serverId;
     }
 
     const dir = outputDir || require('os').tmpdir();
@@ -139,7 +145,7 @@ const handlers = {
     const tmpPath = require('path').join(dir, 'overleaf_' + (fileName || 'download'));
 
     await new Promise((resolve, reject) => {
-      const parsed = new URL(url);
+      const parsed = new URL(finalUrl);
       const httpModule = parsed.protocol === 'http:' ? require('http') : require('https');
       httpModule.get({
         hostname: parsed.hostname,
