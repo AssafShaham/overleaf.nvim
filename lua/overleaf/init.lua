@@ -16,7 +16,10 @@ local function open_file(file_path)
     local viewer_table = vim.split(viewer, ' ')
     table.insert(viewer_table, file_path)
     -- User-configured viewer: run as background job to avoid disrupting cursor/window layout
-    M._state.pdf_job_id = vim.fn.jobstart(viewer_table, { detach = true })
+    -- Only open a new instance if no job exists or the existing one exited. Otherwise, let Okular handle updates
+    if not M._state.pdf_job_id or vim.fn.jobwait({M._state.pdf_job_id}, 0)[1] ~= -1 then
+      M._state.pdf_job_id = vim.fn.jobstart(viewer_table, { detach = true })
+    end
   else
     -- Auto-detect platform launcher (runs in background)
     local cmd
@@ -92,6 +95,7 @@ function M.connect()
       bridge.request('auth', { cookie = cookie }, function(auth_err, result)
         if auth_err then
           config.log('error', 'Authentication failed: %s', auth_err.message)
+          M._get_new_cookie()
           return
         end
 
@@ -160,7 +164,78 @@ function M._get_cookie_fallback(callback)
     return
   end
   config.log('error', 'No cookie found. Log in to overleaf.com in Chrome, or set OVERLEAF_COOKIE in .env')
+  M._get_new_cookie()
+
   callback(nil)
+end
+
+function M._get_new_cookie()
+  -- Open a browser to Overleaf for extracting a new cookie
+  if config.get().invalid_cookie_browser then
+    vim.fn.jobstart({"xdg-open", "https://overleaf.com"}, {detach = true} )
+  end
+  -- Prompt the user for a new cookie
+  if config.get().invalid_cookie_prompt then
+    vim.ui.input({prompt = 'Please input a valid cookie. Type "q" to leave prompt: '}, function(input)
+      local do_connect = M._overwrite_cookie(input)
+      if do_connect then
+        M.connect()
+      end
+    end)
+  end
+end
+
+-- Another variation: test the cookie before writing to the file!
+function M._overwrite_cookie(input)
+  -- First check if user is trying to exit prompt
+  if input == "q" or input == "" then
+    return false
+  end
+
+  -- Get the file
+  local filepath = vim.fn.expand("~/.config/nvim/lua/plugins/overleaf.lua")
+  local buff = vim.fn.bufadd(filepath)
+  -- Check that buffer isn't nil
+  if not buff or buff == 0 then
+    vim.print("ERROR: Couldn't find config file in path '~/.config/nvim/lua/plugins/overleaf.lua'")
+    return false
+  end
+  vim.fn.bufload(buff)
+
+  -- Locate the line
+  local lines = vim.api.nvim_buf_get_lines(buff, 0, -1, false)
+  local idx = nil
+  for i, line in ipairs(lines) do
+    if line:find("cookie") then
+      idx = i
+      break
+    end
+  end
+
+  -- Modify the line
+  if not idx then
+    vim.print("ERROR: No cookie line found in config file. Please ensure a line with 'cookie =' is present.")
+    return false
+  else
+    -- If "overleaf_session2=" prefix isn't present, add it
+    if input:sub(1, 18) ~= "overleaf_session2=" then
+      input = "overleaf_session2=" .. input
+    end
+    vim.api.nvim_buf_set_lines(
+            buff,
+            idx,
+            idx + 1,
+            false,
+            {"        cookie = '" .. input .. "',"})
+    vim.api.nvim_buf_call(buff, function()
+        vim.cmd("write!")
+    end)
+    local overleaf_config = require("overleaf.config")
+    overleaf_config._config.cookie = input
+    vim.print("Cookie set to: " .. vim.inspect(overleaf_config._config.cookie))
+  end
+
+  return true
 end
 
 function M._connect_project(cookie, project_id, project_name)

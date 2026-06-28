@@ -1,3 +1,54 @@
+# overleaf.nvim Fork
+
+Modifies the original plugin to work with Okular PDF viewer while adding some QOL additions along the way.
+
+## Features
+
+- **Unique Okular instance** - compiled files don't open a new Okular instance with every compile
+- **Easy cookie updating** - whenever the cookie is invalid, Overleaf is opened in browser and the user is prompted to enter a new one
+- **PDF page persists** - PDF stays on the page it's open to with each compile
+- **Auto-open and close PDF** - adds support for configs 'startup_compile' and 'close_pdf_on_exit' in overleaf.lua
+
+## Configuration
+
+```lua
+require('overleaf').setup({
+    -- Path to .env file containing OVERLEAF_COOKIE (default: '.env')
+    env_file = '.env',
+
+    -- Session cookie (overrides .env)
+    cookie = nil,
+
+    -- Path to Node.js binary (default: 'node')
+    node_path = 'node',
+
+    -- Log level: 'debug', 'info', 'warn', 'error' (default: 'info')
+    log_level = 'info',
+
+    -- Local file sync directory for external tools like Claude Code (default: nil = disabled)
+    -- When set, all documents are mirrored to disk and external changes are synced back.
+    sync_dir = '~/.overleaf',
+
+    -- Set to false to disable default keymaps
+    keys = true,
+
+    -- Modify the default PDF viewer to be Okular
+    pdf_viewer = '/usr/bin/okular --unique',
+
+    -- Auto-compile when opening a document
+    startup_compile = false,
+
+    -- Automatically close PDF when closing NeoVim
+    close_pdf_on_exit = true,
+
+    -- Have browser open to Overleaf whenever a cookie is invalid
+    invalid_cookie_browser = true,
+
+    -- Prompt user to enter new cookie when current isn't or is absent
+    invalid_cookie_prompt = true,
+})
+```
+
 # overleaf.nvim
 
 Neovim plugin for real-time collaborative LaTeX editing on [Overleaf](https://www.overleaf.com).
