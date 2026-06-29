@@ -6,6 +6,7 @@ Modifies the original plugin to work with Okular PDF viewer while adding some QO
 
 - **Unique Okular instance** - compiled files don't open a new Okular instance with every compile
 - **Easy cookie updating** - whenever the cookie is invalid, Overleaf is opened in browser and the user is prompted to enter a new one
+- **Local compiling** - allows for latexmk use instead of pulling Overleaf PDFs every compile
 - **PDF page persists** - PDF stays on the page it's open to with each compile
 - **Auto-open and close PDF** - adds support for configs 'startup_compile' and 'close_pdf_on_exit' in overleaf.lua
 
@@ -46,6 +47,9 @@ require('overleaf').setup({
 
     -- Prompt user to enter new cookie when current isn't or is absent
     invalid_cookie_prompt = true,
+
+    -- Compile tex files locally via latexmk (requires latexmk)
+    local_compile = false,
 })
 ```
 

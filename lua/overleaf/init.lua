@@ -206,7 +206,7 @@ function M._overwrite_cookie(input)
   local lines = vim.api.nvim_buf_get_lines(buff, 0, -1, false)
   local idx = nil
   for i, line in ipairs(lines) do
-    if line:find("cookie") then
+    if line:find("cookie =") then
       idx = i
       break
     end
@@ -653,6 +653,10 @@ function M.open_document(doc_id_or_path, doc_path)
         if doc.bufnr and vim.api.nvim_buf_is_valid(doc.bufnr) then comments.render(doc.bufnr, doc_id, doc.content) end
       end)
     end
+    -- Auto-compile the file upon opening
+    if config.get().startup_compile then
+        vim.schedule(function() M.compile() end)
+    end
   end)
 end
 
@@ -675,11 +679,6 @@ function M.select_document()
   end
 
   project.select_document(function(doc_id, doc_path) M.open_document(doc_id, doc_path) end)
-
-  -- Auto-compile the file upon opening
-  if config.get().startup_compile then
-    vim.schedule(function() M.compile() end)
-  end
 end
 
 function M.toggle_tree()
@@ -1080,6 +1079,19 @@ function M._show_history(updates)
   end)
 end
 
+-- vim.g.vimtex_view_method = 'general'
+-- vim.g.vimtex_view_general_viewer = 'okular'
+-- vim.g.vimtex_view_general_options = '--unique file:@pdf\\#src:@line@tex'
+-- vim.g.vimtex_view_okular_use_synctex = 1
+-- vim.g.vimtex_syntax_enabled = 0
+-- vim.g.vimtex_compiler_latexmk = {
+--   options = {
+--     '-pdf',
+--     '-synctex=1',
+--     '-interaction=nonstopmode',
+--   },
+-- }
+
 function M.compile()
   if not M._state.connected then
     config.log('warn', 'Not connected. Run :Overleaf connect first.')
@@ -1087,6 +1099,52 @@ function M.compile()
   end
 
   config.log('info', 'Compiling...')
+
+  -- If compiling locally, do so and skip bridge request
+    if config.get().local_compile then
+      -- Check for latexmk; if missing, throw error (ensure installed or change config)
+      if vim.fn.executable('latexmk') == 0 then
+        config.log('error', 'local_compile requires latexmk. Make sure it\'s properly installed or disable local_compile.')
+        return
+      end
+
+      -- Obtain the path to the local version of the current file
+      local sync_dir = config.get().sync_dir
+      if not sync_dir then
+        config.log('error', 'local_compile requires sync_dir to be configured.')
+        return
+      end
+      sync_dir = vim.fn.expand(sync_dir)
+      local folder_path = sync_dir .. '/' .. M._state.project_name
+      local file_name = vim.fn.fnamemodify(vim.api.nvim_buf_get_name(0), ':t')
+      local file_path = folder_path .. '/' .. file_name
+
+      -- Double check file exists
+      if vim.fn.filereadable(file_path) == 0 then
+          config.log('error', 'Local file not found: %s. Check if sync_dir is configured.', file_path)
+          return
+      end
+
+      -- Call latexmk to compile file
+      -- vim.b.vimtex_main = file_path
+      -- vim.notify('vimtex_main: ' .. tostring(vim.b.vimtex_main))
+      -- vim.cmd('VimtexCompileSS')
+      -- vim.fn.serverstart('/tmp/nvim.sock')
+      vim.fn.jobstart({'latexmk', '-pdf', '-synctex=1', '-interaction=nonstopmode', file_path}, {
+        cwd = folder_path,
+        on_exit = function(_, code)
+          -- If compile is successful, open PDF
+          if code == 0 then
+            config.log('info', 'Local compile successful')
+            local pdf_path = folder_path .. '/' .. vim.fn.fnamemodify(file_path, ':t:r') .. '.pdf'
+            open_file(pdf_path)
+          else
+            config.log('error', 'Local compile failed')
+          end
+        end
+      })
+      return
+    end
 
   bridge.request('compile', {
     cookie = config.get().cookie,
